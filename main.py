@@ -1,12 +1,16 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import os
 import asyncio
 from datetime import datetime
+from dotenv import load_dotenv
 
-TOKEN = "TOKEN_BOT_KAMU"
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ID GROUP ADMIN
-ADMIN_GROUP_ID = -1001234567890
+# load env
+load_dotenv()
+
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID"))
 
 WELCOME_TEXT = """
 SELAMAT DATANG
@@ -37,13 +41,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now().hour
 
     if now < 6 or now > 21:
-        await update.message.reply_text("⚠️ Server sedang offline\n\nJam operasional 06.00 - 21.00 WIB")
+        await update.message.reply_text("⚠️ Server sedang offline\nJam operasional 06.00 - 21.00 WIB")
         return
 
     user = update.message.from_user
     photo = update.message.photo[-1].file_id
 
-    # kirim foto ke group admin
     await context.bot.send_photo(
         chat_id=ADMIN_GROUP_ID,
         photo=photo,
@@ -62,7 +65,8 @@ User ID : {user.id}
 
     await asyncio.sleep(5)
 
-    hasil = """
+    await update.message.reply_text(
+"""
 HASIL PENGECEKAN FR
 
 Nama : DATA TIDAK DITEMUKAN
@@ -71,9 +75,7 @@ Kemiripan : 0%
 
 STATUS : TIDAK ADA DATA
 """
-
-    await update.message.reply_text(hasil)
-
+)
 
 app = ApplicationBuilder().token(TOKEN).build()
 
