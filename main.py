@@ -7,91 +7,119 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Setup Logging agar kita tahu kalau ada error di terminal
+# 1. Setup Logging (Penting untuk melihat error di terminal)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
+# 2. Load Environment Variables
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
-# Gunakan default 0 jika ID tidak ditemukan agar tidak crash saat startup
-ADMIN_GROUP_ID = os.getenv("ADMIN_GROUP_ID") 
+
+# Fungsi untuk membersihkan dan mengambil ID Grup Admin
+def get_admin_id():
+    raw_id = os.getenv("ADMIN_GROUP_ID")
+    if not raw_id:
+        print("❌ ERROR: ADMIN_GROUP_ID tidak ditemukan di .env!")
+        return None
+    try:
+        # Menghapus spasi atau karakter aneh yang mungkin terselip
+        clean_id = raw_id.strip()
+        return int(clean_id)
+    except ValueError:
+        print(f"❌ ERROR: Format ADMIN_GROUP_ID di .env salah: {raw_id}")
+        return None
+
+ADMIN_GROUP_ID = get_admin_id()
 
 WELCOME_TEXT = """
-SELAMAT DATANG BOT FR TESTING
+*SELAMAT DATANG*
 
-1. Masukkan foto tampak depan & jelas.
-2. Sistem akan mengecek dalam 10 menit.
-3. Operasional: 06.00 - 21.00 WIB.
+*BOT FR TESTING*
+(KUOTA 10/DAY)
+
+*CARA PENGGUNAAN BOT*
+1. Kirim foto target tampak depan dan jelas.
+2. Tunggu pengecekan sistem (estimasi 10 menit).
+3. Bot akan menampilkan Nama, NIK, dan Akurasi.
+4. Jam Operasional: *06.00 - 21.00 WIB*.
+
+Selamat bertugas!
 """
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WELCOME_TEXT)
+    await update.message.reply_text(WELCOME_TEXT, parse_mode='Markdown')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 1. Cek Jam Operasional
+    # Cek Jam Operasional
     now = datetime.now().hour
     if now < 6 or now > 21:
         await update.message.reply_text("⚠️ Server sedang offline\nJam operasional 06.00 - 21.00 WIB")
         return
 
-    # 2. Ambil Data User & Foto
+    # Ambil Informasi User
     user = update.message.from_user
-    photo_id = update.message.photo[-1].file_id
+    photo_file_id = update.message.photo[-1].file_id
     
-    # Proteksi jika username kosong (None)
-    username = f"@{user.username}" if user.username else "Tidak ada"
+    # Penanganan jika user tidak punya username agar bot tidak crash
+    username = f"@{user.username}" if user.username else "Tidak Ada Username"
     first_name = user.first_name if user.first_name else "User"
 
-    # 3. Kirim ke Admin (Penyebab utama biasanya di sini)
+    # Pesan untuk Admin
+    admin_caption = (
+        f"📥 *FOTO MASUK*\n\n"
+        f"👤 *Nama:* {first_name}\n"
+        f"🆔 *Username:* {username}\n"
+        f"🔢 *User ID:* `{user.id}`"
+    )
+
+    # --- PROSES KIRIM KE GRUP ADMIN ---
     try:
         await context.bot.send_photo(
-            chat_id=int(ADMIN_GROUP_ID), # Pastikan diconvert ke int di sini
-            photo=photo_id,
-            caption=(
-                f"📥 **FOTO MASUK**\n\n"
-                f"👤 **User:** {first_name}\n"
-                f"🆔 **Username:** {username}\n"
-                f"🔢 **User ID:** `{user.id}`"
-            ),
-            parse_mode='Markdown' # Agar tampilan lebih rapi
+            chat_id=ADMIN_GROUP_ID,
+            photo=photo_file_id,
+            caption=admin_caption,
+            parse_mode='Markdown'
         )
-        logging.info(f"Foto dari {first_name} berhasil diteruskan ke Admin.")
+        print(f"✅ Berhasil meneruskan foto dari {first_name} ke grup admin.")
+        
     except Exception as e:
-        logging.error(f"Gagal kirim ke admin: {e}")
-        await update.message.reply_text("❌ Terjadi kesalahan saat mengirim data ke server.")
+        # Jika gagal, detail error akan muncul di Terminal/CMD Anda
+        print(f"❌ GAGAL KIRIM KE ADMIN: {e}")
+        await update.message.reply_text("❌ Gagal mengirim data ke server admin. Pastikan bot sudah berada di grup.")
         return
 
-    # 4. Respon ke User
+    # --- RESPON KE USER ---
     await update.message.reply_text(
         "📥 Foto diterima\n\n⏳ Sistem sedang melakukan pengecekan FR..."
     )
 
-    # Simulasi proses (5 detik)
+    # Simulasi proses loading
     await asyncio.sleep(5)
 
-    await update.message.reply_text(
-        "**HASIL PENGECEKAN FR**\n\n"
+    result_text = (
+        "*HASIL PENGECEKAN FR*\n\n"
         "Nama : DATA TIDAK DITEMUKAN\n"
         "NIK  : -\n"
         "Kemiripan : 0%\n\n"
-        "STATUS : TIDAK ADA DATA",
-        parse_mode='Markdown'
+        "STATUS : *TIDAK ADA DATA*"
     )
+    
+    await update.message.reply_text(result_text, parse_mode='Markdown')
 
-# Inisialisasi Bot
+# Inisialisasi Aplikasi
 if __name__ == '__main__':
     if not TOKEN or not ADMIN_GROUP_ID:
-        print("ERROR: Token atau Admin Group ID belum diisi di .env!")
-        exit()
+        print("❌ Bot tidak bisa jalan. Periksa file .env Anda!")
+    else:
+        app = ApplicationBuilder().token(TOKEN).build()
 
-    app = ApplicationBuilder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        # Pastikan filter hanya menangkap FOTO
+        app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    app.add_handler(CommandHandler("start", start))
-    # Filter PHOTO ditambahkan agar tidak merespon dokumen/file biasa
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-
-    print("Bot sedang berjalan...")
-    app.run_polling()
+        print(f"Bot sedang berjalan... (Admin ID: {ADMIN_GROUP_ID})")
+        app.run_polling()
