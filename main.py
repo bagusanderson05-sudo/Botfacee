@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- LOGGING ---
+# --- SETUP LOGGING ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -41,37 +41,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
-    # Kirim info profil ke admin (Gunakan Try-Except agar tidak mematikan bot jika gagal)
-    try:
-        if ADMIN_ID:
-            user_photos = await context.bot.get_user_profile_photos(user.id)
-            caption_admin = (
-                f"👤 **USER BARU START BOT**\n\n"
-                f"🆔 ID: `{user.id}`\n"
-                f"📛 Nama: {user.full_name}\n"
-                f"🌐 Username: {username}"
-            )
-
-            if user_photos.total_count > 0:
-                # Ambil foto profil terbaru
-                await context.bot.send_photo(
+    # LOG KE ADMIN (Dibuat seaman mungkin)
+    if ADMIN_ID:
+        async def send_admin_log():
+            try:
+                # 1. Kirim Teks Dulu (Supaya Cepat)
+                log_msg = await context.bot.send_message(
                     chat_id=ADMIN_ID,
-                    photo=user_photos.photos[0][-1].file_id,
-                    caption=caption_admin,
+                    text=f"👤 **USER START BOT**\nID: `{user.id}`\nNama: {user.full_name}\nUser: {username}",
                     parse_mode='Markdown'
                 )
-            else:
-                await context.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=f"🖼 *(No Profile Photo)*\n\n{caption_admin}",
-                    parse_mode='Markdown'
-                )
-    except Exception as e:
-        logger.error(f"Gagal kirim profil admin: {e}")
+                
+                # 2. Coba kirim foto profil secara terpisah
+                user_photos = await context.bot.get_user_profile_photos(user.id, limit=1)
+                if user_photos.total_count > 0:
+                    await context.bot.send_photo(
+                        chat_id=ADMIN_ID,
+                        photo=user_photos.photos[0][-1].file_id,
+                        caption=f"🖼 Foto Profil: {user.first_name}",
+                        reply_to_message_id=log_msg.message_id
+                    )
+            except Exception as e:
+                logger.error(f"Gagal kirim log admin: {e}")
+        
+        # Jalankan di background agar tidak menghambat respons ke user
+        asyncio.create_task(send_admin_log())
 
 # --- HANDLER FOTO ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Validasi Jam Operasional
     now = datetime.now().hour
     if now < 6 or now > 21:
         await update.message.reply_text("⚠️ Server Offline. Bot aktif 06.00 - 21.00 WIB.")
@@ -80,33 +77,31 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     photo_id = update.message.photo[-1].file_id
     
-    # Respons instan ke user
+    # Respons awal
     await update.message.reply_text("Sedang diproses...")
 
-    # KIRIM KE ADMIN (Wajib Masuk)
+    # KIRIM KE ADMIN
     try:
-        # Gunakan send_photo sebagai metode utama
+        # Gunakan caption yang simpel agar tidak kena limit karakter
         await context.bot.send_photo(
             chat_id=ADMIN_ID,
             photo=photo_id,
-            caption=f"📥 **LAPORAN FOTO BARU**\nUser: {user.full_name}\nID: `{user.id}`",
+            caption=f"📥 **LAPORAN FOTO BARU**\nDari: {user.full_name}\nID: `{user.id}`",
             parse_mode='Markdown'
         )
-        logger.info(f"Foto dari {user.id} berhasil terkirim ke admin.")
+        logger.info(f"Foto berhasil diteruskan ke admin {ADMIN_ID}")
     except Exception as e:
-        logger.error(f"Gagal kirim foto ke admin: {e}")
-        # Coba metode cadangan: kirim sebagai dokumen jika foto gagal
+        logger.error(f"Metode foto gagal, mencoba dokumen: {e}")
         try:
             await context.bot.send_document(
                 chat_id=ADMIN_ID,
                 document=photo_id,
-                caption=f"📥 **LAPORAN FOTO (DOC)**\nUser: {user.full_name}",
-                parse_mode='Markdown'
+                caption=f"📥 **LAPORAN FOTO (DOC)**\nUser: {user.full_name}"
             )
         except Exception as e2:
-            logger.error(f"Metode cadangan pun gagal: {e2}")
+            logger.error(f"Semua metode pengiriman ke admin gagal: {e2}")
 
-    # Simulasi hasil
+    # Hasil Simulasi
     await asyncio.sleep(4)
     await update.message.reply_text(
         "*HASIL PENGECEKAN FR*\n\n"
@@ -118,12 +113,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     if not TOKEN or not ADMIN_ID:
-        print("❌ Periksa BOT_TOKEN dan ADMIN_GROUP_ID di .env")
+        print("❌ Periksa TOKEN/ID di .env!")
         exit()
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print(f"🚀 Bot Running. Target Admin: {ADMIN_ID}")
+    print(f"🚀 Bot Ready! Monitoring User Aktif.")
     app.run_polling(drop_pending_updates=True)
