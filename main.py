@@ -18,30 +18,54 @@ load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 try:
+    # Mengambil ADMIN_ID dari .env
     ADMIN_ID = int(os.getenv("ADMIN_GROUP_ID").strip())
-except:
+except Exception as e:
+    logger.error(f"Gagal memuat ADMIN_GROUP_ID: {e}")
     ADMIN_ID = None
 
 # --- HANDLER /START ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    # Mengambil username, jika tidak ada diberi keterangan
+    username = f"@{user.username}" if user.username else "Tidak memiliki Username"
+    
     welcome_text = (
-        "SELAMAT DATANG\n\n"
-        "BOT FR TESTING\n"
-        "(KUOTA 10/DAY)\n\n"
-        "CARA PENGGUNAAN BOT\n\n"
-        "1. SILAHKAN MASUKKAN FOTO TARGET, UPAYAKAN FOTO TAMPAK DEPAN DAN TERLIHAT JELAS.\n\n"
-        "2. SISTEM AKAN MELAKUKAN PENGECEKAN FR TARGET DALAM 10MENIT WAKTU TERCEPAT UNTUK MENDAPATKAN HASIL FR AKURASI TINGGI.\n\n"
-        "3. BOT AKAN MENAMPILKAN HASIL NAMA, NIK, DAN PERSENTASE KEMIRIPAN DENGAN FOTO TARGET.\n\n"
-        "4. BOT BERFUNGSI SAAT SERVER HIDUP DI PUKUL 06.00 WIB SAMPAI DENGAN PUKUL 21.00 WIB.\n\n"
-        "5. GUNAKAN AKSES DENGAN BIJAK. TERIMAKASIH\n\n\n"
-        "SELAMAT BERTUGAS, SEMOGA SUKSES SELALU"
+        f"👋 HALO, {user.first_name}!\n"
+        f"🆔 ID: `{user.id}`\n"
+        f"👤 Username: {username}\n"
+        "--------------------------------------------\n"
+        "✨ **SELAMAT DATANG DI BOT FR TESTING** ✨\n"
+        "📊 (KUOTA 10/DAY)\n\n"
+        "**CARA PENGGUNAAN BOT:**\n\n"
+        "1️⃣ Kirimkan **FOTO TARGET** (Tampak depan & jelas).\n"
+        "2️⃣ Sistem akan melakukan pengecekan dalam waktu cepat untuk akurasi tinggi.\n"
+        "3️⃣ Bot akan menampilkan Nama, NIK, dan Persentase Kemiripan.\n"
+        "4️⃣ Operasional: **06.00 WIB - 21.00 WIB**.\n"
+        "5️⃣ Gunakan akses dengan bijak. Terimakasih.\n\n"
+        "🚀 *Selamat bertugas, semoga sukses selalu!*"
     )
-    # Start biasa tanpa tombol kontak dulu
-    await update.message.reply_text(welcome_text, reply_markup=ReplyKeyboardRemove())
+
+    # Kirim pesan ke User
+    await update.message.reply_text(welcome_text, reply_markup=ReplyKeyboardRemove(), parse_mode='Markdown')
+
+    # Kirim Notifikasi ke Admin bahwa ada user baru klik /start
+    if ADMIN_ID:
+        try:
+            admin_msg = (
+                "🔔 **USER BARU TERDETEKSI**\n"
+                f"👤 Nama: {user.full_name}\n"
+                f"🆔 ID: `{user.id}`\n"
+                f"🏷 Username: {username}"
+            )
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Gagal kirim log start ke admin: {e}")
 
 # --- HANDLER FOTO ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
+    username = f"@{user.username}" if user.username else "N/A"
     photo_id = update.message.photo[-1].file_id
     
     # 1. Beri notifikasi foto diterima
@@ -62,7 +86,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_photo(
                 chat_id=ADMIN_ID,
                 photo=photo_id,
-                caption=f"📸 **FOTO MASUK (Menunggu Kontak)**\nUser: {user.full_name}\nID: `{user.id}`",
+                caption=f"📸 **FOTO MASUK (Menunggu Kontak)**\nUser: {user.full_name}\nUsername: {username}\nID: `{user.id}`",
                 parse_mode='Markdown'
             )
         except Exception as e:
@@ -78,9 +102,9 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
     
-    # Simulasi loading sesuai permintaan Anda
+    # Simulasi loading
     await asyncio.sleep(1.5)
-    await update.message.reply_text("Sedang diproses...")
+    await update.message.reply_text("🔍 Sedang diproses oleh sistem...")
 
     # 2. Kirim data kontak lengkap ke Admin
     if ADMIN_ID:
@@ -100,14 +124,15 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- MAIN ---
 if __name__ == '__main__':
     if not TOKEN or not ADMIN_ID:
-        print("❌ Cek .env!")
+        print("❌ KESALAHAN: Cek file .env! TOKEN atau ADMIN_GROUP_ID belum terisi.")
         exit()
 
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Registrasi Handler
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
 
-    print(f"🚀 Bot Running... Monitoring Admin: {ADMIN_ID}")
+    print(f"🚀 Bot Berhasil Dijalankan... Memonitor Admin ID: {ADMIN_ID}")
     app.run_polling(drop_pending_updates=True)
